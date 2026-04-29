@@ -47,7 +47,17 @@ If you already cloned without `--recurse-submodules`:
 git submodule update --init --recursive
 ```
 
-### 2. Run the setup script
+### 2. Configure your API key
+
+Open `.env` (created automatically by `setup.sh`) and set `API_KEY` to a strong secret:
+
+```bash
+API_KEY=your-secret-key-here
+```
+
+### 3. First-time setup
+
+Builds images, initializes submodules, and starts all services:
 
 ```bash
 ./setup.sh
@@ -56,21 +66,17 @@ git submodule update --init --recursive
 This will:
 1. Initialize submodules (if not done already)
 2. Create `.env` from `.env.example`
-3. Build and start all Docker services
+3. Build Docker images and start all services
 
-### 3. Configure your API key
+### Subsequent runs
 
-Open `.env` and set `API_KEY` to a strong secret:
-
-```bash
-API_KEY=your-secret-key-here
-```
-
-Then restart the API:
+After the initial setup, use `start.sh` to bring up the stack without rebuilding:
 
 ```bash
-docker compose restart api
+./start.sh
 ```
+
+> Use `./setup.sh` again only if you need to rebuild images (e.g. after pulling changes).
 
 ---
 
@@ -123,28 +129,76 @@ Copy `.env.example` to `.env` and adjust the values. The most important ones:
 
 ## IoT Simulator
 
-The simulator sends synthetic MQTT telemetry for a specific space. It requires a `placeId` and `spaceId` that exist in the database.
+The simulator sends synthetic MQTT telemetry for a specific space. It requires a `placeId` and `spaceId` that exist in the database — create them first via the frontend or the API.
+
+### Setup
 
 ```bash
-# Install dependencies
 cd iot-simulator
 npm install
-cp .env.example .env  # configure MQTT_BROKER_URL if needed
+cp .env.example .env  # adjust MQTT_URL if needed
+```
 
-# Run one simulator instance
-node index.js --site-id <placeId> --office-id <spaceId>
+### Normal operation (no alerts)
 
-# Run multiple instances in parallel (different terminals)
+Sends readings well within thresholds — CO2 around 600 ppm, 2 people in the space:
+
+```bash
+BASE_CO2_PPM=600 BASE_OCCUPANCY=2 node index.js --site-id <placeId> --office-id <spaceId>
+```
+
+### Trigger a CO2 alert
+
+CO2 above 1000 ppm sustained for ~5 minutes opens a CO2 alert:
+
+```bash
+BASE_CO2_PPM=1200 node index.js --site-id <placeId> --office-id <spaceId>
+```
+
+### Trigger an occupancy alert
+
+Set occupancy above the space's configured capacity (e.g. capacity = 10, occupancy = 13).
+The alert opens after ~2 minutes of sustained overcapacity:
+
+```bash
+BASE_OCCUPANCY=13 node index.js --site-id <placeId> --office-id <spaceId>
+```
+
+### Trigger both alerts at once
+
+```bash
+BASE_CO2_PPM=1300 BASE_OCCUPANCY=13 node index.js --site-id <placeId> --office-id <spaceId>
+```
+
+### Run multiple simulators in parallel
+
+Each simulator instance represents one physical device. Run in separate terminals:
+
+```bash
 node index.js --site-id <placeId> --office-id <spaceId1>
 node index.js --site-id <placeId> --office-id <spaceId2>
 ```
+
+### Environment variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `MQTT_URL` | `mqtt://localhost:1883` | MQTT broker URL |
+| `INTERVAL_SEC` | `10` | Telemetry publish interval in seconds |
+| `BASE_CO2_PPM` | `800` | Base CO2 reading (ppm) |
+| `BASE_OCCUPANCY` | `3` | Base occupancy count |
+| `BASE_TEMP_C` | `23` | Base temperature (°C) |
+| `BASE_HUMIDITY_PCT` | `48` | Base humidity (%) |
+| `BASE_POWER_W` | `120` | Base power consumption (W) |
+
+### MQTT topics
 
 The simulator publishes to:
 - `sites/{placeId}/offices/{spaceId}/telemetry` — sensor readings
 - `sites/{placeId}/offices/{spaceId}/reported` — confirmed device state
 
 And subscribes to:
-- `sites/{placeId}/offices/{spaceId}/desired` — configuration updates
+- `sites/{placeId}/offices/{spaceId}/desired` — configuration updates from the cloud
 
 ---
 
