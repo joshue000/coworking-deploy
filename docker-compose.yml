@@ -1,0 +1,76 @@
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: coworking_mosquitto
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./iot-simulator/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mqtt_data:/mosquitto/data
+      - mqtt_log:/mosquitto/log
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: coworking_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-coworking_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-coworking_pass}
+      POSTGRES_DB: ${POSTGRES_DB:-coworking_db}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-coworking_user} -d ${POSTGRES_DB:-coworking_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ./coworking-api
+      dockerfile: docker/app/Dockerfile
+    container_name: coworking_api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mosquitto:
+        condition: service_started
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: ${PORT:-3000}
+      API_KEY: ${API_KEY:-change-me-in-production}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-coworking_user}:${POSTGRES_PASSWORD:-coworking_pass}@postgres:5432/${POSTGRES_DB:-coworking_db}
+      MQTT_BROKER_URL: mqtt://mosquitto:1883
+      MQTT_CLIENT_ID: ${MQTT_CLIENT_ID:-coworking-api}
+      ALERT_CO2_OPEN_WINDOW_SEC: ${ALERT_CO2_OPEN_WINDOW_SEC:-300}
+      ALERT_CO2_RESOLVE_WINDOW_SEC: ${ALERT_CO2_RESOLVE_WINDOW_SEC:-120}
+      ALERT_OCCUPANCY_MAX_OPEN_WINDOW_SEC: ${ALERT_OCCUPANCY_MAX_OPEN_WINDOW_SEC:-120}
+      ALERT_OCCUPANCY_MAX_RESOLVE_WINDOW_SEC: ${ALERT_OCCUPANCY_MAX_RESOLVE_WINDOW_SEC:-60}
+      ALERT_OCCUPANCY_UNEXPECTED_OPEN_WINDOW_SEC: ${ALERT_OCCUPANCY_UNEXPECTED_OPEN_WINDOW_SEC:-600}
+      ALERT_OCCUPANCY_UNEXPECTED_RESOLVE_WINDOW_SEC: ${ALERT_OCCUPANCY_UNEXPECTED_RESOLVE_WINDOW_SEC:-300}
+      TELEMETRY_AGGREGATION_WINDOW_MIN: ${TELEMETRY_AGGREGATION_WINDOW_MIN:-5}
+    ports:
+      - "${PORT:-3000}:3000"
+    command: >
+      sh -c "npx prisma migrate deploy && node dist/main.js"
+
+  frontend:
+    build:
+      context: ./coworking-frontend
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:3000}
+    container_name: coworking_frontend
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "${FRONTEND_PORT:-80}:80"
+
+volumes:
+  postgres_data:
+  mqtt_data:
+  mqtt_log:
