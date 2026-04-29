@@ -1,0 +1,9 @@
+[submodule "coworking-api"]
+	path = coworking-api
+	url = https://github.com/joshue000/coworking-api.git
+[submodule "coworking-frontend"]
+	path = coworking-frontend
+	url = https://github.com/joshue000/coworking-frontend.git
+[submodule "iot-simulator"]
+	path = iot-simulator
+	url = https://github.com/joshue000/iot-simulator.git
